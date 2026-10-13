@@ -1,0 +1,744 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BTS.id Recruitment Test - Backend REST API",
+    "description": "Production-ready OpenAPI REST API for Product Management and Authentication with Rate Limiting and Caching.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Backend Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Direct Backend API Server"
+    },
+    {
+      "url": "http://localhost:80",
+      "description": "Nginx Reverse Proxy"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "User registration and login endpoints (Rate limit: 3 requests / 60 seconds)"
+    },
+    {
+      "name": "Products",
+      "description": "Product management endpoints with pagination, search, caching, and rate limiting"
+    },
+    {
+      "name": "Health",
+      "description": "System health and database readiness endpoints"
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "description": "Creates a new user account. Rate limited to 3 requests per 60 seconds.",
+        "operationId": "registerUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (e.g. passwords do not match)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Username already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 3 per 60s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Authenticate user credentials",
+        "description": "Logs in user and returns authentication_token and refresh_token. Rate limited to 3 requests per 60 seconds.",
+        "operationId": "loginUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 3 per 60s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get current authenticated user profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current user profile data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "userId": { "type": "integer", "example": 1 },
+                        "username": { "type": "string", "example": "jhon_doe" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "Get all products (with search, category filter, pagination, and caching)",
+        "description": "Returns paginated products. Responses are cached in-memory. Response header X-Cache indicates HIT or MISS.",
+        "operationId": "getProducts",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Filter products whose title contains keyword",
+            "schema": { "type": "string", "example": "T-Shirt" }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Filter products by exact category",
+            "schema": { "type": "string", "example": "Clothes" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page number (defaults to 1)",
+            "schema": { "type": "integer", "default": 1, "example": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Number of items per page (defaults to 10)",
+            "schema": { "type": "integer", "default": 10, "example": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of products with pagination metadata",
+            "headers": {
+              "X-Cache": {
+                "schema": { "type": "string", "example": "HIT" },
+                "description": "Cache hit or miss indicator"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Products"],
+        "summary": "Create a new product",
+        "description": "Creates a new product. Requires JWT authorization. Rate limited to 1 request per 5 seconds. Invalidates product caches.",
+        "operationId": "createProduct",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (missing title, price, category, or empty images)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 1 hit per 5s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "Get product detail by ID",
+        "description": "Fetches a single product by its numeric ID. Responses are cached in-memory.",
+        "operationId": "getProductById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Numeric product ID",
+            "schema": { "type": "integer", "example": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product detail",
+            "headers": {
+              "X-Cache": {
+                "schema": { "type": "string", "example": "HIT" },
+                "description": "Cache hit or miss indicator"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Products"],
+        "summary": "Update an existing product",
+        "description": "Updates product data by ID. Requires JWT authorization. Rate limited to 1 request per 5 seconds. Invalidates product caches.",
+        "operationId": "updateProduct",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Numeric product ID",
+            "schema": { "type": "integer", "example": 1 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 1 hit per 5s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Products"],
+        "summary": "Delete a product by ID",
+        "description": "Deletes a product by ID. Requires JWT authorization. Rate limited to 1 request per 5 seconds. Invalidates product caches.",
+        "operationId": "deleteProduct",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Numeric product ID",
+            "schema": { "type": "integer", "example": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteProductResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 1 hit per 5s)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Liveness check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy and responding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "UP" },
+                    "timestamp": { "type": "string", "example": "2026-10-13T04:20:00.000Z" },
+                    "uptime": { "type": "number", "example": 12.34 },
+                    "environment": { "type": "string", "example": "production" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Readiness check",
+        "description": "Verifies MySQL database connectivity.",
+        "responses": {
+          "200": {
+            "description": "Database connected and service ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "READY" },
+                    "database": { "type": "string", "example": "CONNECTED" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database connection disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "NOT_READY" },
+                    "database": { "type": "string", "example": "DISCONNECTED" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Provide JWT bearer token obtained from POST /api/auth/login"
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["username", "password", "password_confirmation"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 50,
+            "example": "jhon_doe"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6,
+            "example": "supersecret"
+          },
+          "password_confirmation": {
+            "type": "string",
+            "minLength": 6,
+            "example": "supersecret"
+          }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "User registered successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer", "example": 2 },
+              "username": { "type": "string", "example": "jhon_doe" }
+            }
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "example": "jhon_doe" },
+          "password": { "type": "string", "example": "supersecret" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Login successful" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "integer", "example": 1 },
+                  "username": { "type": "string", "example": "jhon_doe" }
+                }
+              },
+              "authentication_token": {
+                "type": "string",
+                "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              },
+              "refresh_token": {
+                "type": "string",
+                "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              },
+              "token_type": { "type": "string", "example": "Bearer" }
+            }
+          }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "title": { "type": "string", "example": "Awesome T-Shirt" },
+          "price": { "type": "number", "format": "float", "example": 99.99 },
+          "description": { "type": "string", "nullable": true, "example": "High-quality cotton t-shirt" },
+          "category": { "type": "string", "example": "Clothes" },
+          "images": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "example": ["https://placeimg.com/640/480/any"]
+          },
+          "created_at": { "type": "string", "example": "2025-01-01 15:01:04" },
+          "created_by": { "type": "string", "example": "Jhon Doe" },
+          "created_by_id": { "type": "string", "example": "1" },
+          "updated_at": { "type": "string", "example": "2025-01-01 15:01:04" },
+          "updated_by": { "type": "string", "example": "Jhon Doe" },
+          "updated_by_id": { "type": "string", "example": "1" }
+        }
+      },
+      "CreateProductRequest": {
+        "type": "object",
+        "required": ["title", "price", "category", "images"],
+        "properties": {
+          "title": { "type": "string", "example": "Awesome T-Shirt" },
+          "price": { "type": "number", "minimum": 0, "example": 99.99 },
+          "description": { "type": "string", "example": "High-quality cotton t-shirt" },
+          "category": { "type": "string", "example": "Clothes" },
+          "images": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "minItems": 1,
+            "example": ["https://placeimg.com/640/480/any"]
+          }
+        }
+      },
+      "UpdateProductRequest": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "example": "Awesome Vintage T-Shirt" },
+          "price": { "type": "number", "minimum": 0, "example": 109.99 },
+          "description": { "type": "string", "example": "Premium washed cotton t-shirt" },
+          "category": { "type": "string", "example": "Clothes" },
+          "images": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" },
+            "minItems": 1,
+            "example": ["https://placeimg.com/640/480/any"]
+          }
+        }
+      },
+      "ProductListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Product" }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": { "type": "integer", "example": 1 },
+              "limit": { "type": "integer", "example": 10 },
+              "total": { "type": "integer", "example": 45 },
+              "totalPages": { "type": "integer", "example": 5 }
+            }
+          }
+        }
+      },
+      "ProductDetailResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Product created successfully" },
+          "data": { "$ref": "#/components/schemas/Product" }
+        }
+      },
+      "DeleteProductResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Product deleted successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer", "example": 1 }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string", "example": "Validation failed" },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string", "example": "VALIDATION_ERROR" },
+              "message": { "type": "string", "example": "images must contain at least 1 image URL" },
+              "details": { "type": "array", "items": { "type": "object" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
