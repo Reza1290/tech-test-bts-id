@@ -20,6 +20,7 @@ Production-grade, modular REST API developed for the **BTS.id Backend Developer 
 - [Running the Application](#running-the-application)
   - [Option A: Running with Docker Compose (Recommended)](#option-a-running-with-docker-compose-recommended)
   - [Option B: Running Locally (Node.js)](#option-b-running-locally-nodejs)
+- [Database Migrations (Panduan Migrasi Database)](#database-migrations-panduan-migrasi-database)
 - [Automated Testing](#automated-testing)
 - [cURL Request Examples](#curl-request-examples)
 - [Postman Collection](#postman-collection)
@@ -192,14 +193,14 @@ When the application is running, open the interactive Swagger UI in your browser
    npm install
    ```
 
-3. Run database migrations:
-   ```bash
-   npm run migrate
-   ```
-
-4. Copy environment configuration:
+3. Copy environment configuration:
    ```bash
    cp .env.example .env
+   ```
+
+4. Run database migrations:
+   ```bash
+   npm run migrate
    ```
 
 5. Start development server with live reload:
@@ -212,6 +213,75 @@ When the application is running, open the interactive Swagger UI in your browser
    npm run build
    npm start
    ```
+
+---
+
+## Database Migrations (Panduan Migrasi Database)
+
+File migrasi database tersimpan rapi dan terorganisir di direktori:
+[`infra/database/migrations/`](infra/database/migrations/)
+
+```
+infra/database/migrations/
+├── 001_create_users_table.sql      # Membuat tabel 'users' untuk autentikasi & JWT
+├── 002_create_products_table.sql   # Membuat tabel 'products' sesuai spesifikasi PDF
+└── 003_seed_initial_data.sql       # Mengisi user default (jhon_doe) dan sample produk
+```
+
+### Cara Menjalankan Migrasi Database
+
+Tersedia beberapa cara untuk menjalankan migrasi database:
+
+#### 1. Menggunakan NPM Migration Runner (Direkomendasikan untuk Local Dev)
+Backend dilengkapi dengan migration runner otomatis yang mengeksekusi semua file SQL migrasi secara berurutan dan mencatat riwayat migrasi pada tabel `schema_migrations`.
+
+Runner ini bersifat **idempoten** (aman dijalankan berulang kali tanpa risiko duplikasi data atau error tabel sudah ada):
+
+```bash
+cd apps/backend
+npm run migrate
+```
+
+Contoh output:
+```text
+[INFO]: Running database migrations from directory: D:\Workspace\test-btsid\infra\database\migrations
+[INFO]: Applying migration: 001_create_users_table.sql
+[INFO]: Migration applied successfully: 001_create_users_table.sql
+[INFO]: Applying migration: 002_create_products_table.sql
+[INFO]: Migration applied successfully: 002_create_products_table.sql
+[INFO]: Applying migration: 003_seed_initial_data.sql
+[INFO]: Migration applied successfully: 003_seed_initial_data.sql
+[INFO]: Database migrations complete (3/3 executed)
+```
+
+Jika dijalankan ulang saat database sudah termigrasi:
+```text
+[DEBUG]: Migration already applied, skipping: 001_create_users_table.sql
+[DEBUG]: Migration already applied, skipping: 002_create_products_table.sql
+[DEBUG]: Migration already applied, skipping: 003_seed_initial_data.sql
+[INFO]: Database migrations complete (0 new migrations executed)
+```
+
+#### 2. Otomatis via Docker Compose
+Jika menggunakan Docker Compose, container MySQL secara otomatis mengeksekusi inisialisasi schema dan data dari [`infra/database/init.sql`](infra/database/init.sql) saat container pertama kali dijalankan:
+
+```bash
+docker compose up --build -d
+```
+Tidak perlu menjalankan migrasi manual saat menggunakan Docker.
+
+#### 3. Manual via MySQL CLI / Client
+Anda juga dapat mengeksekusi file SQL migrasi secara manual menggunakan MySQL client:
+
+```bash
+# Menjalankan per file migrasi berurutan
+mysql -h localhost -P 3306 -u bts_user -p bts_recruitment_db < infra/database/migrations/001_create_users_table.sql
+mysql -h localhost -P 3306 -u bts_user -p bts_recruitment_db < infra/database/migrations/002_create_products_table.sql
+mysql -h localhost -P 3306 -u bts_user -p bts_recruitment_db < infra/database/migrations/003_seed_initial_data.sql
+
+# Atau sekaligus menggunakan init.sql
+mysql -h localhost -P 3306 -u bts_user -p bts_recruitment_db < infra/database/init.sql
+```
 
 ---
 
