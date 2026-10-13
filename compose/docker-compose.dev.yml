@@ -1,0 +1,72 @@
+networks:
+  bts-dev-network:
+    name: bts-dev-network
+    driver: bridge
+
+volumes:
+  mysql_dev_data:
+    name: bts_mysql_dev_data
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: bts-mysql-dev
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-bts_root_secret_password}
+      MYSQL_DATABASE: ${DB_NAME:-bts_recruitment_db}
+      MYSQL_USER: ${DB_USER:-bts_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+      - ../infra/database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - bts-dev-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-bts_root_secret_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile
+    image: bts-backend:1.0.0-dev
+    container_name: bts-backend-dev
+    restart: unless-stopped
+    command: npm run dev
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      NODE_OPTIONS: "--max-http-header-size=65536"
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-bts_user}
+      DB_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+      DB_NAME: ${DB_NAME:-bts_recruitment_db}
+      JWT_SECRET: ${JWT_SECRET:-bts_recruitment_super_secret_jwt_key_at_least_32_chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-bts_recruitment_super_secret_refresh_jwt_key_at_least_32_chars}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    volumes:
+      - ../apps/backend:/app
+      - /app/node_modules
+      - /app/dist
+    networks:
+      - bts-dev-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

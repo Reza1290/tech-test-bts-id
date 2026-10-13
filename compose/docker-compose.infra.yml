@@ -1,0 +1,52 @@
+networks:
+  bts-network:
+    name: ${COMPOSE_PROJECT_NAME:-bts}-network
+    driver: bridge
+
+volumes:
+  mysql_data:
+    name: ${COMPOSE_PROJECT_NAME:-bts}_mysql_data
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ${COMPOSE_PROJECT_NAME:-bts}-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-bts_root_secret_password}
+      MYSQL_DATABASE: ${DB_NAME:-bts_recruitment_db}
+      MYSQL_USER: ${DB_USER:-bts_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../infra/database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      bts-network:
+        aliases:
+          - bts-mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-bts_root_secret_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-bts}-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:8080"
+    volumes:
+      - ../infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../infra/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - bts-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

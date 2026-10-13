@@ -1,0 +1,36 @@
+networks:
+  bts-network:
+    name: ${COMPOSE_PROJECT_NAME:-bts}-network
+
+services:
+  bts-backend:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile
+    image: bts-backend:1.0.0
+    container_name: ${COMPOSE_PROJECT_NAME:-bts}-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      NODE_OPTIONS: "--max-http-header-size=65536"
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      DB_HOST: ${DB_HOST:-bts-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-bts_user}
+      DB_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+      DB_NAME: ${DB_NAME:-bts_recruitment_db}
+      JWT_SECRET: ${JWT_SECRET:-bts_recruitment_super_secret_jwt_key_at_least_32_chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-bts_recruitment_super_secret_refresh_jwt_key_at_least_32_chars}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    networks:
+      - bts-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

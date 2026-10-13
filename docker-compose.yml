@@ -1,0 +1,89 @@
+networks:
+  bts-network:
+    name: bts-network
+    driver: bridge
+
+volumes:
+  mysql_data:
+    name: bts_mysql_data
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: bts-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-bts_root_secret_password}
+      MYSQL_DATABASE: ${DB_NAME:-bts_recruitment_db}
+      MYSQL_USER: ${DB_USER:-bts_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infra/database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      bts-network:
+        aliases:
+          - bts-mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-bts_root_secret_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    image: bts-backend:1.0.0
+    container_name: bts-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      NODE_OPTIONS: "--max-http-header-size=65536"
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-bts_user}
+      DB_PASSWORD: ${DB_PASSWORD:-bts_secret_password}
+      DB_NAME: ${DB_NAME:-bts_recruitment_db}
+      JWT_SECRET: ${JWT_SECRET:-bts_recruitment_super_secret_jwt_key_at_least_32_chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-bts_recruitment_super_secret_refresh_jwt_key_at_least_32_chars}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    networks:
+      - bts-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: bts-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:8080"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - bts-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
